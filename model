@@ -5,23 +5,29 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import cv2
+from sklearn.utils import shuffle
 from google.colab.patches import cv2_imshow
 from sklearn.model_selection import train_test_split
 import os
 from os.path import isfile, isdir, join
+from keras import backend as K
 from keras.models import Sequential
-from keras.layers import Conv2D, MaxPooling2D, AveragePooling2D, Dense, Activation, Flatten
+from keras.layers import Conv2D, MaxPooling2D, AveragePooling2D, Dense, Activation, Flatten, Dropout, SpatialDropout2D
 
-targetpath = ["/content/drive/MyDrive/fray_colab_dataset/mika/train"
-        ,"/content/drive/MyDrive/fray_colab_dataset/mika/vaild"
-        ,"/content/drive/MyDrive/fray_colab_dataset/mika/test"]
+targetpath = ["....dataset_path......","....dataset_path......"]
+
+diction = [[1.0,0.0],[0.0,1.0]] # depend on label_size
 
 #define the basic setting
 imglenth = 300
 imgwidth = 300
-num_of_traindata = 50
-num_of_testdata = 30
+ratio_of_train = 0.65
+ratio_of_vaild = 0.3
 label_size = 2
+batch = 100
+round = 30
+dropoutrate = 0.45
+learnrate = 0.0015
 
 # Define the CNN model
 model = Sequential()
@@ -31,13 +37,19 @@ model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(imglenth, imgwidth,
 model.add(MaxPooling2D((2, 2)))
 
 model.add(Conv2D(32, (3, 3), activation='relu'))
+model.add(SpatialDropout2D(dropoutrate/2))
 model.add(MaxPooling2D((2, 2)))
 
 model.add(Conv2D(64, (3, 3), activation='relu'))
 model.add(MaxPooling2D((2, 2)))
 
-model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(Conv2D(128, (3, 3), activation='relu'))
+model.add(SpatialDropout2D(dropoutrate/2))
 model.add(MaxPooling2D((2, 2)))
+
+model.add(Conv2D(256, (3, 3), activation='relu'))
+model.add(MaxPooling2D((2, 2)))
+model.add(Dropout(dropoutrate))
 
 # Flatten layer to connect the convolutional layers to the fully connected layers
 model.add(Flatten())
@@ -46,8 +58,10 @@ model.add(Flatten())
 model.add(Dense(128, activation='relu'))
 model.add(Dense(label_size, activation='softmax'))  # Output layer with 10 units for classification
 
+opt = tf.keras.optimizers.Adam(learning_rate=learnrate,weight_decay=(dropoutrate/2))
+
 # Compile the model
-model.compile(optimizer='adam',
+model.compile(optimizer=opt,
               loss='categorical_crossentropy',
               metrics=['accuracy'])
 
@@ -55,38 +69,68 @@ model.compile(optimizer='adam',
 model.summary()
 
 #import the image
-databox = [[],[],[]]
-label = [[],[],[]]
-ind = [0,0,0]
+bufferarea = []
+tagarea = []
+databox = [[],[]]
+label = [[],[]]
+ind = 0
+total = 0
 
-for j in range(0,3):
+for j in range(0,2):
   file = listdir(targetpath[j])
   for i in file:
     fullpath = join(targetpath[j], i)
     if isfile(fullpath):
-      databox[j].append(np.array(cv2.imread(fullpath)))
-      label[j].append(np.array([1.0,0.0]))
-      ind[j] = ind[j] + 1
+      im = cv2.imread(fullpath)
+      bufferarea.append(np.array(cv2.resize(im, (imglenth, imgwidth), interpolation=cv2.INTER_AREA)))
+      tagarea.append(np.array(diction[j]))
+      ind = ind + 1
+      total = total + 1
     elif isdir(fullpath):
       print("error, this should be file")
+  #spilt data
+  bufferarea , tagarea = shuffle(bufferarea , tagarea, random_state = 0)
+  ind = (int)(ind*ratio_of_train)
+  databox[0] = databox[0] + bufferarea[:ind]
+  databox[1] = databox[1] + bufferarea[ind:]
+  label[0] = label[0] + tagarea[:ind]
+  label[1] = label[1] + tagarea[ind:]
+  bufferarea.clear()
+  tagarea.clear()
+  ind = 0
 
-
-for i in range(2,3):
-  for j in range(0,ind[i]):
-    print("this picture's name is: ")
-    print(label[i][j])
-  #cv2_imshow(databox[i])
+print("whole data size: ")
+print(total)
+databox[0] ,label[0] = shuffle(databox[0] ,label[0] ,random_state=0)
+databox[1] ,label[1] = shuffle(databox[1] ,label[1] ,random_state=0)
 
 #define the train data
 train_data = np.array(databox[0])
 train_labels = np.array(label[0])
-val_data = np.array(databox[1])
-val_labels = np.array(label[1])
-test_data = np.array(databox[2])
-test_labels = np.array(label[2])
+test_data = np.array(databox[1])
+test_labels = np.array(label[1])
 
-model.fit(train_data, train_labels, batch_size=1, epochs=10, validation_data=(val_data, val_labels))
+model.fit(train_data, train_labels, batch_size=batch, epochs=round, validation_split=(ratio_of_vaild))
 test_loss, test_acc = model.evaluate(test_data, test_labels)
 
 print(f'Test accuracy: {test_acc}')
 print(f'Test loss: {test_loss}')
+
+#test model
+name = "....imgpath...."
+imag = [np.array(cv2.resize(cv2.imread(name), (imglenth,imgwidth), interpolation=cv2.INTER_AREA))]
+cv2_imshow(cv2.resize(cv2.imread(name), (imglenth,imgwidth), interpolation=cv2.INTER_AREA))
+predic = model.predict(np.array(imag))
+print(predic.shape)
+print(predic)
+
+# Save the entire model as a SavedModel.
+model_name = "model_name.keras"
+model.save('/content/drive/MyDrive/fray_colab_dataset/cat_dog/model/' + model_name)
+
+#install previous model
+pre_model_name = "model_name.keras"
+loading_model = tf.keras.models.load_model('/content/drive/MyDrive/fray_colab_dataset/mika/model/' + pre_model_name)
+
+# Check its architecture
+loading_model.summary()
