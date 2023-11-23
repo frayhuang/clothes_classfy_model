@@ -1,0 +1,93 @@
+from posix import listdir
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import cv2
+from google.colab.patches import cv2_imshow
+from sklearn.model_selection import train_test_split
+import os
+from os.path import isfile, isdir, join
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D, AveragePooling2D, Dense, Activation, Flatten
+
+#define the basic setting
+imglenth = 300
+imgwidth = 300
+num_of_traindata = 50
+num_of_testdata = 30
+label_size = 2
+
+#show image
+databox = [[],[],[]]
+label = [[],[],[]]
+ind = [0,0,0]
+targetpath = ["sample_data/trainingdata/mika/train","sample_data/trainingdata/mika/vaild","sample_data/trainingdata/mika/test"]
+for j in range(0,3):
+  file = listdir(targetpath[j])
+  for i in file:
+    fullpath = join(targetpath[j], i)
+    if isfile(fullpath):
+      databox[j].append(np.array(cv2.imread(fullpath)))
+      label[j].append(np.array([1.0,0.0]))
+      ind[j] = ind[j] + 1
+    elif isdir(fullpath):
+      print("error, this should be file")
+
+
+for i in range(2,3):
+  for j in range(0,ind[i]):
+    print("this picture's name is: ")
+    print(label[i][j])
+  #cv2_imshow(databox[i])
+
+
+
+
+# Define the CNN model
+model = Sequential()
+
+# Convolutional and pooling layers
+model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(10,imglenth, imgwidth, 3)))
+model.add(MaxPooling2D((2, 2)))
+
+model.add(Conv2D(32, (3, 3), activation='relu'))
+model.add(MaxPooling2D((2, 2)))
+
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D((2, 2)))
+
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D((2, 2)))
+
+# Flatten layer to connect the convolutional layers to the fully connected layers
+model.add(Flatten())
+
+# Fully connected layers
+model.add(Dense(128, activation='relu'))
+model.add(Dense(label_size, activation='softmax'))  # Output layer with 10 units for classification
+
+# Compile the model
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Display the model summary
+model.summary()
+
+#import the image
+
+
+#define the train data
+train_data = databox[0]
+train_labels = label[0]
+val_data = databox[1]
+val_labels = label[1]
+test_data = databox[2]
+test_labels = label[2]
+
+
+model.fit(train_data, train_labels, batch_size=10, epochs=10, validation_data=(val_data, val_labels))
+test_loss, test_acc = model.evaluate(test_data, test_labels)
+
+print(f'Test accuracy: {test_acc}')
+print(f'Test loss: {test_loss}')
